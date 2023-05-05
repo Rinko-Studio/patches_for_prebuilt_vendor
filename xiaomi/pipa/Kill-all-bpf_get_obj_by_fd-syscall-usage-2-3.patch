@@ -1,0 +1,100 @@
+From bc08f30785350c2739c8f94cb7811850fc6aa2d7 Mon Sep 17 00:00:00 2001
+From: tarsin <yuanqingxiang233@163.com>
+Date: Wed, 17 Aug 2022 10:27:36 +0800
+Subject: [PATCH] Kill all bpf_get_obj_by_fd syscall usage [2/3]
+
+* Seems our kernel doesn't like this
+
+Change-Id: Ic4296b394914e9ebf04e841374576f1faacc9460
+---
+ libbpf_android/Loader.cpp | 60 ---------------------------------------
+ 1 file changed, 60 deletions(-)
+
+diff --git a/libbpf_android/Loader.cpp b/libbpf_android/Loader.cpp
+index 1c462dd..47f8c75 100644
+--- a/libbpf_android/Loader.cpp
++++ b/libbpf_android/Loader.cpp
+@@ -638,52 +638,6 @@ static std::optional<unique_fd> getMapBtfInfo(const char* elfPath,
+     return btfFd;
+ }
+ 
+-static bool mapMatchesExpectations(unique_fd& fd, string& mapName, struct bpf_map_def& mapDef,
+-                                   enum bpf_map_type type) {
+-    // bpfGetFd... family of functions require at minimum a 4.14 kernel,
+-    // so on 4.9 kernels just pretend the map matches our expectations.
+-    // This isn't really a problem as we only really support 4.14+ anyway...
+-    // Additionally we'll get almost equivalent test coverage on newer devices/kernels.
+-    // This is because the primary failure mode we're trying to detect here
+-    // is either a source code misconfiguration (which is likely kernel independent)
+-    // or a newly introduced kernel feature/bug (which is unlikely to get backported to 4.9).
+-    if (!isAtLeastKernelVersion(4, 14, 0)) return true;
+-
+-    // These asserts should *never* trigger, if one of them somehow does,
+-    // it probably means a bpf .o file has been changed/replaced at runtime
+-    // and bpfloader was manually rerun (normally it should only run *once*
+-    // early during the boot process).
+-    // Another possibility is that something is misconfigured in the code:
+-    // most likely a shared map is declared twice differently.
+-    // But such a change should never be checked into the source tree...
+-    int fd_type = bpfGetFdMapType(fd);
+-    int fd_key_size = bpfGetFdKeySize(fd);
+-    int fd_value_size = bpfGetFdValueSize(fd);
+-    int fd_max_entries = bpfGetFdMaxEntries(fd);
+-    int fd_map_flags = bpfGetFdMapFlags(fd);
+-
+-    // DEVMAPs are readonly from the bpf program side's point of view, as such
+-    // the kernel in kernel/bpf/devmap.c dev_map_init_map() will set the flag
+-    int desired_map_flags = (int)mapDef.map_flags;
+-    if (type == BPF_MAP_TYPE_DEVMAP || type == BPF_MAP_TYPE_DEVMAP_HASH)
+-        desired_map_flags |= BPF_F_RDONLY_PROG;
+-
+-    // If anything doesn't match, just close the fd - it's of no use anyway.
+-    if (fd_type != type) fd.reset();
+-    if (fd_key_size != (int)mapDef.key_size) fd.reset();
+-    if (fd_value_size != (int)mapDef.value_size) fd.reset();
+-    if (fd_max_entries != (int)mapDef.max_entries) fd.reset();
+-    if (fd_map_flags != desired_map_flags) fd.reset();
+-
+-    if (fd.ok()) return true;
+-
+-    ALOGE("bpf map name %s mismatch: desired/found: "
+-          "type:%d/%d key:%u/%d value:%u/%d entries:%u/%d flags:%u/%d",
+-          mapName.c_str(), type, fd_type, mapDef.key_size, fd_key_size, mapDef.value_size,
+-          fd_value_size, mapDef.max_entries, fd_max_entries, desired_map_flags, fd_map_flags);
+-    return false;
+-}
+-
+ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>& mapFds,
+                       const char* prefix, const unsigned long long allowedDomainBitmask,
+                       const size_t sizeOfBpfMapDef) {
+@@ -844,11 +798,6 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
+ 
+         if (!fd.ok()) return -saved_errno;
+ 
+-        // When reusing a pinned map, we need to check the map type/sizes/etc match, but for
+-        // safety (since reuse code path is rare) run these checks even if we just created it.
+-        // We assume failure is due to pinned map mismatch, hence the 'NOT UNIQUE' return code.
+-        if (!mapMatchesExpectations(fd, mapNames[i], md[i], type)) return -ENOTUNIQ;
+-
+         if (!reuse) {
+             if (specified(selinux_context)) {
+                 string createLoc = string(BPF_FS_PATH) + lookupPinSubdir(selinux_context) +
+@@ -886,15 +835,6 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
+             }
+         }
+ 
+-        struct bpf_map_info map_info = {};
+-        __u32 map_info_len = sizeof(map_info);
+-        int rv = bpf_obj_get_info_by_fd(fd, &map_info, &map_info_len);
+-        if (rv) {
+-            ALOGE("bpf_obj_get_info_by_fd failed, ret: %d [%d]", rv, errno);
+-        } else {
+-            ALOGI("map %s id %d", mapPinLoc.c_str(), map_info.id);
+-        }
+-
+         mapFds.push_back(std::move(fd));
+     }
+ 
+-- 
+2.30.2
+
