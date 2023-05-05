@@ -1,0 +1,30 @@
+From 619b2786a409085c02ea74ec907b317d1b7f692b Mon Sep 17 00:00:00 2001
+From: KaguraRinko <lynnrin@lynnrin.moe>
+Date: Fri, 5 May 2023 15:27:40 +0800
+Subject: [PATCH] [HACK] Don't check device manifest compatibility
+
+ [Lynnrin]: On pipa, system will report sepolicy is not compatiable.
+
+ W VintfObject: VintfObject.verifyWithoutAvb() returns 1: Device manifest and framework compatibility matrix are incompatible: Sepolicy version 30.0 doesn't satisify the requirements.
+
+Change-Id: Iabb56ac2df5512b2aabc72618c15cbe9dfeafa8a
+---
+ VintfObject.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/VintfObject.cpp b/VintfObject.cpp
+index 8d9df31..d575ea9 100644
+--- a/VintfObject.cpp
++++ b/VintfObject.cpp
+@@ -618,7 +618,7 @@ int32_t VintfObject::checkCompatibility(std::string* error, CheckFlags::Type fla
+             error->insert(0,
+                           "Device manifest and framework compatibility matrix are incompatible: ");
+         }
+-        return INCOMPATIBLE;
++        return COMPATIBLE;
+     }
+     if (!getFrameworkHalManifest()->checkCompatibility(*getDeviceCompatibilityMatrix(), error)) {
+         if (error) {
+-- 
+2.30.2
+
